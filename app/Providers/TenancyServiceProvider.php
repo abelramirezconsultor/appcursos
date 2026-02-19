@@ -8,9 +8,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use App\Http\Middleware\ResolveTenantAliasInPath;
 use Stancl\JobPipeline\JobPipeline;
+use Stancl\Tenancy\Contracts\TenantCouldNotBeIdentifiedException;
 use Stancl\Tenancy\Events;
-use Stancl\Tenancy\Exceptions\TenantCouldNotBeIdentifiedById;
 use Stancl\Tenancy\Jobs;
 use Stancl\Tenancy\Listeners;
 use Stancl\Tenancy\Middleware;
@@ -101,7 +102,7 @@ class TenancyServiceProvider extends ServiceProvider
 
     public function boot()
     {
-        Middleware\InitializeTenancyByPath::$onFail = function (TenantCouldNotBeIdentifiedById $exception, Request $request) {
+        Middleware\InitializeTenancyByPath::$onFail = function (TenantCouldNotBeIdentifiedException $exception, Request $request) {
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => 'Tenant no encontrado o inválido.',
@@ -145,6 +146,7 @@ class TenancyServiceProvider extends ServiceProvider
         $tenancyMiddleware = [
             // Even higher priority than the initialization middleware
             Middleware\PreventAccessFromCentralDomains::class,
+            ResolveTenantAliasInPath::class,
 
             Middleware\InitializeTenancyByDomain::class,
             Middleware\InitializeTenancyBySubdomain::class,

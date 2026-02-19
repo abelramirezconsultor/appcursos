@@ -21,10 +21,12 @@ class TenantRegistrationController extends Controller
 
     public function store(Request $request, RegisterTenantService $registerTenantService): RedirectResponse|\Illuminate\Http\JsonResponse
     {
+        $isAuthenticated = $request->user() !== null;
+
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'name' => [$isAuthenticated ? 'nullable' : 'required', 'string', 'max:255'],
+            'email' => [$isAuthenticated ? 'nullable' : 'required', 'string', 'email', 'max:255'],
+            'password' => [$isAuthenticated ? 'nullable' : 'required', 'string', 'min:8', 'confirmed'],
             'business_name' => ['required', 'string', 'max:255'],
             'alias' => ['required', 'string', 'max:30', 'regex:/^[a-z0-9][a-z0-9-]*[a-z0-9]$/', 'unique:tenants,alias'],
             'course_area' => ['required', 'string', Rule::in($this->courseAreas())],
@@ -33,6 +35,12 @@ class TenantRegistrationController extends Controller
             'expected_students_6m' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'planned_courses_year_1' => ['nullable', 'integer', 'min:0', 'max:500'],
         ]);
+
+        if ($isAuthenticated) {
+            $validated['name'] = $request->user()->name;
+            $validated['email'] = $request->user()->email;
+            $validated['owner_password_hash'] = $request->user()->password;
+        }
 
         $tenant = $registerTenantService->register($validated);
 

@@ -27,7 +27,7 @@ class RegisterTenantService
             'planned_courses_year_1' => $payload['planned_courses_year_1'] ?? null,
             'owner_name' => $payload['name'],
             'owner_email' => $payload['email'],
-            'owner_password' => Hash::make($payload['password']),
+            'owner_password' => $payload['owner_password_hash'] ?? Hash::make($payload['password']),
             'tenancy_db_name' => $databaseName,
         ];
 
@@ -46,7 +46,13 @@ class RegisterTenantService
 
     private function identificationMode(): string
     {
-        return (string) env('TENANCY_IDENTIFICATION', 'path');
+        $mode = (string) env('TENANCY_IDENTIFICATION', 'auto');
+
+        if ($mode === 'auto') {
+            return app()->environment('production') ? 'subdomain' : 'path';
+        }
+
+        return $mode;
     }
 
     private function normalizeAlias(string $alias): string

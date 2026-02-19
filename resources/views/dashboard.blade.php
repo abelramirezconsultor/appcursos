@@ -20,6 +20,28 @@
                     <a href="{{ route('tenants.create') }}" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
                         {{ __('Registrar nueva plataforma de cursos') }}
                     </a>
+
+                    @php
+                        $ownedTenants = \App\Models\Tenant::query()
+                            ->where('owner_email', auth()->user()->email)
+                            ->orderByDesc('created_at')
+                            ->get(['id', 'name', 'slug']);
+                    @endphp
+
+                    <div class="mt-6">
+                        <h3 class="font-semibold mb-2">Mis plataformas</h3>
+                        <ul class="space-y-2">
+                            @forelse ($ownedTenants as $tenant)
+                                <li>
+                                    <a href="{{ route('tenant-admin.show', $tenant->id) }}" class="text-indigo-700 underline">
+                                        {{ $tenant->name }} ({{ $tenant->id }})
+                                    </a>
+                                </li>
+                            @empty
+                                <li>No tienes plataformas todavía.</li>
+                            @endforelse
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

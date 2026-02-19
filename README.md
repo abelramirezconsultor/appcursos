@@ -1,3 +1,23 @@
+## Tenancy por entorno (local vs producción)
+
+El proyecto soporta modo híbrido automático:
+
+- `TENANCY_IDENTIFICATION=auto`:
+	- `local` => rutas por path: `/t/{alias}/login`
+	- `production` => subdominio: `https://{alias}.{APP_BASE_DOMAIN}/login`
+
+Variables recomendadas:
+
+```env
+TENANCY_IDENTIFICATION=auto
+APP_BASE_DOMAIN=tudominio.com
+```
+
+Notas:
+
+- En producción, al registrar un tenant se crea su dominio con el alias (`{alias}.{APP_BASE_DOMAIN}`).
+- En local no necesitas DNS/wildcard: sigue funcionando por path.
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">
