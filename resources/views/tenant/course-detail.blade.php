@@ -1,5 +1,19 @@
 <!DOCTYPE html>
 <html lang="es">
+@php
+    $tenantName = (string) (tenant('name') ?? 'Plataforma');
+    $tenantPrimaryColor = (string) (tenant('primary_color') ?? '#1e3a8a');
+    if (!preg_match('/^#(?:[0-9a-fA-F]{3}){1,2}$/', $tenantPrimaryColor)) {
+        $tenantPrimaryColor = '#1e3a8a';
+    }
+    $tenantLogoPath = (string) (tenant('logo_path') ?? '');
+    $tenantLogoUrl = null;
+    if ($tenantLogoPath !== '') {
+        $tenantLogoUrl = \Illuminate\Support\Str::startsWith($tenantLogoPath, ['http://', 'https://', '/'])
+            ? $tenantLogoPath
+            : asset($tenantLogoPath);
+    }
+@endphp
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,15 +25,28 @@
             background: linear-gradient(180deg, #111827 0%, #1e3a8a 40%, #f8fafc 40%, #f8fafc 100%);
             min-height: 100vh;
         }
+        :root {
+            --tenant-primary: {{ $tenantPrimaryColor }};
+        }
         .stat-card {
-            border-left: 4px solid #6366f1;
+            border-left: 4px solid var(--tenant-primary);
+        }
+        .btn-primary,
+        .progress-bar {
+            background-color: var(--tenant-primary) !important;
+            border-color: var(--tenant-primary) !important;
         }
     </style>
 </head>
 <body class="game-bg">
     <nav class="navbar navbar-expand-lg bg-dark navbar-dark border-bottom border-secondary">
         <div class="container">
-            <span class="navbar-brand fw-semibold">🏅 {{ tenant('name') ?? 'Plataforma' }}</span>
+            <span class="navbar-brand fw-semibold d-inline-flex align-items-center gap-2">
+                @if ($tenantLogoUrl)
+                    <img src="{{ $tenantLogoUrl }}" alt="Logo {{ $tenantName }}" style="height:30px; width:auto; max-width:120px; object-fit:contain;" />
+                @endif
+                <span>{{ $tenantName }}</span>
+            </span>
             <div class="d-flex gap-3 align-items-center">
                 <a class="nav-link text-white" href="{{ route('tenant.student.courses.index', ['tenant' => $tenantRouteKey]) }}">Mis cursos</a>
                 <a class="nav-link text-white" href="{{ route('tenant.activation.create', ['tenant' => $tenantRouteKey]) }}">Activar código</a>
@@ -48,6 +75,15 @@
             </div>
         @endif
 
+        @if (($courseAchievements ?? collect())->isNotEmpty())
+            <div class="alert alert-info py-2 mb-3">
+                <strong>Logros de este curso:</strong>
+                @foreach ($courseAchievements as $achievement)
+                    <span class="badge text-bg-info ms-1">{{ $achievement->name }}</span>
+                @endforeach
+            </div>
+        @endif
+
         <div class="d-flex flex-wrap justify-content-between gap-3 mb-3 text-white">
             <div>
                 <a href="{{ route('tenant.student.courses.index', ['tenant' => $tenantRouteKey]) }}" class="small text-white-50">← Volver a mis cursos</a>
@@ -63,6 +99,16 @@
 
         @if (session('success'))
             <div class="alert alert-success">{{ session('success') }}</div>
+        @endif
+
+        @if ($errors->any())
+            <div class="alert alert-danger">
+                <ul class="mb-0 ps-3">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
         @endif
 
         <div class="progress mb-4" role="progressbar" aria-valuenow="{{ $progressPercent }}" aria-valuemin="0" aria-valuemax="100">
@@ -93,6 +139,22 @@
                             </div>
                         </div>
                     </div>
+
+                    @php
+                        $selectedModule = $selectedLesson->module;
+                        $moduleQuiz = $selectedModule?->quiz;
+                    @endphp
+                    @if ($moduleQuiz && $moduleQuiz->is_active)
+                        <div class="card shadow-sm mt-3">
+                            <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                <div>
+                                    <h3 class="h6 mb-1">Evaluación del módulo</h3>
+                                    <p class="small text-muted mb-0">Aprueba con al menos {{ $moduleQuiz->minimum_score }}% para asegurar el desbloqueo por desempeño.</p>
+                                </div>
+                                <a href="{{ route('tenant.student.quizzes.show', ['tenant' => $tenantRouteKey, 'enrollment' => $enrollment->id, 'quiz' => $moduleQuiz->id]) }}" class="btn btn-outline-primary btn-sm">Ir al quiz</a>
+                            </div>
+                        </div>
+                    @endif
                 </div>
 
                 <div class="col-12 col-lg-4">
@@ -104,14 +166,25 @@
                                     @php
                                         $isLessonDone = in_array((int) $lesson->id, $completedLessonIds, true);
                                         $isCurrent = (int) $selectedLesson->id === (int) $lesson->id;
+                                        $isLocked = in_array((int) $lesson->id, $lockedLessonIds, true);
                                     @endphp
-                                    <a href="{{ route('tenant.student.courses.show', ['tenant' => $tenantRouteKey, 'enrollment' => $enrollment->id, 'lesson' => $lesson->id]) }}" class="list-group-item list-group-item-action {{ $isCurrent ? 'active' : '' }}">
-                                        <div class="d-flex justify-content-between align-items-start gap-2">
-                                            <span>{{ $lesson->title }}</span>
-                                            <span class="badge {{ $isLessonDone ? 'text-bg-success' : 'text-bg-secondary' }}">{{ $isLessonDone ? '✓' : 'Pendiente' }}</span>
+                                    @if ($isLocked)
+                                        <div class="list-group-item list-group-item-action disabled">
+                                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                                <span>{{ $lesson->title }}</span>
+                                                <span class="badge text-bg-warning">Bloqueada</span>
+                                            </div>
+                                            <small class="d-block mt-1 text-muted">Requiere cumplir el prerequisito obligatorio configurado para este módulo.</small>
                                         </div>
-                                        <small class="d-block mt-1 {{ $isCurrent ? 'text-white-50' : 'text-muted' }}">XP: {{ $lesson->xp_reward }}</small>
-                                    </a>
+                                    @else
+                                        <a href="{{ route('tenant.student.courses.show', ['tenant' => $tenantRouteKey, 'enrollment' => $enrollment->id, 'lesson' => $lesson->id]) }}" class="list-group-item list-group-item-action {{ $isCurrent ? 'active' : '' }}">
+                                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                                <span>{{ $lesson->title }}</span>
+                                                <span class="badge {{ $isLessonDone ? 'text-bg-success' : 'text-bg-secondary' }}">{{ $isLessonDone ? '✓' : 'Pendiente' }}</span>
+                                            </div>
+                                            <small class="d-block mt-1 {{ $isCurrent ? 'text-white-50' : 'text-muted' }}">XP: {{ $lesson->xp_reward }}</small>
+                                        </a>
+                                    @endif
                                 @endforeach
                             </div>
                         </div>

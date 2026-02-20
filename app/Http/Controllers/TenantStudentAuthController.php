@@ -15,11 +15,18 @@ class TenantStudentAuthController extends Controller
         return view('tenant.login', [
             'prefillEmail' => (string) $request->query('email', ''),
             'tenantRouteKey' => $this->tenantRouteKey(),
+            'tenantSuspended' => $this->isTenantSuspended(),
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
+        if ($this->isTenantSuspended()) {
+            return back()->withErrors([
+                'email' => 'El tenant está suspendido. Contacta al administrador.',
+            ]);
+        }
+
         $validated = $request->validate([
             'email' => ['required', 'email', 'max:255'],
             'password' => ['required', 'string', 'min:8'],
@@ -66,5 +73,10 @@ class TenantStudentAuthController extends Controller
     private function tenantRouteKey(): string
     {
         return (string) (tenant('alias') ?: tenant('id'));
+    }
+
+    private function isTenantSuspended(): bool
+    {
+        return (string) (tenant('status') ?? 'active') === 'suspended';
     }
 }

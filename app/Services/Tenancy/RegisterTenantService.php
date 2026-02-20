@@ -10,6 +10,9 @@ class RegisterTenantService
 {
     public function register(array $payload): Tenant
     {
+        $planCode = (string) ($payload['plan_code'] ?? 'starter');
+        $planLimits = $this->planLimits($planCode);
+
         $tenantAlias = $this->normalizeAlias($payload['alias']);
         $tenantSlug = $this->buildUniqueSlug($tenantAlias);
         $tenantKey = $this->buildTenantKey($tenantSlug);
@@ -28,6 +31,14 @@ class RegisterTenantService
             'owner_name' => $payload['name'],
             'owner_email' => $payload['email'],
             'owner_password' => $payload['owner_password_hash'] ?? Hash::make($payload['password']),
+            'status' => 'active',
+            'plan_code' => $planCode,
+            'max_users' => (int) ($payload['max_users'] ?? $planLimits['max_users']),
+            'max_courses' => (int) ($payload['max_courses'] ?? $planLimits['max_courses']),
+            'max_storage_mb' => (int) ($payload['max_storage_mb'] ?? $planLimits['max_storage_mb']),
+            'logo_path' => $payload['logo_path'] ?? null,
+            'primary_color' => $payload['primary_color'] ?? null,
+            'timezone' => $payload['timezone'] ?? 'America/Bogota',
             'tenancy_db_name' => $databaseName,
         ];
 
@@ -97,5 +108,26 @@ class RegisterTenantService
         $baseDomain = env('APP_BASE_DOMAIN', 'appcursos.test');
 
         return "{$slug}.{$baseDomain}";
+    }
+
+    private function planLimits(string $planCode): array
+    {
+        return match ($planCode) {
+            'enterprise' => [
+                'max_users' => 10000,
+                'max_courses' => 5000,
+                'max_storage_mb' => 51200,
+            ],
+            'pro' => [
+                'max_users' => 1000,
+                'max_courses' => 500,
+                'max_storage_mb' => 10240,
+            ],
+            default => [
+                'max_users' => 100,
+                'max_courses' => 50,
+                'max_storage_mb' => 2048,
+            ],
+        };
     }
 }

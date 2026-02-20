@@ -7,11 +7,20 @@ use App\Models\CourseEnrollment;
 use App\Models\CourseProgress;
 use App\Models\ActivationCode;
 use App\Models\EnrollmentLessonProgress;
+use App\Models\Quiz;
+use App\Models\QuizAnswer;
+use App\Models\QuizAttempt;
+use App\Models\QuizOption;
+use App\Models\QuizQuestion;
 use App\Models\UserGamificationStat;
+use App\Models\UserCourseAchievement;
 use App\Models\User;
+use App\Notifications\Tenant\CourseCompletedNotification;
+use App\Notifications\Tenant\StreakReminderNotification;
 use App\Services\Gamification\GamificationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -20,6 +29,14 @@ class TenantStudentController extends Controller
 {
     public function index(Request $request): View|RedirectResponse
     {
+        if ($this->isTenantSuspended()) {
+            return redirect()->route('tenant.student.login', [
+                'tenant' => $this->tenantRouteKey(),
+            ])->withErrors([
+                'email' => 'El tenant está suspendido. Contacta al administrador.',
+            ]);
+        }
+
         $tenantId = $this->tenantId();
         $tenantRouteKey = $this->tenantRouteKey();
         $sessionTenantId = (string) $request->session()->get('tenant_student_tenant_id', '');
@@ -75,10 +92,42 @@ class TenantStudentController extends Controller
                 ];
             });
 
+        $notifications = $student->notifications()
+            ->latest()
+            ->limit(15)
+            ->get()
+            ->map(function (DatabaseNotification $notification): array {
+                $data = (array) $notification->data;
+
+                return [
+                    'id' => $notification->id,
+                    'title' => (string) ($data['title'] ?? 'Notificación'),
+                    'message' => (string) ($data['message'] ?? ''),
+                    'category' => (string) ($data['category'] ?? 'general'),
+                    'is_read' => ! is_null($notification->read_at),
+                    'created_at' => optional($notification->created_at)?->format('Y-m-d H:i'),
+                ];
+            });
+
+        $courseAchievements = UserCourseAchievement::query()
+            ->where('user_id', $student->id)
+            ->orderByDesc('awarded_at')
+            ->get(['id', 'course_id', 'slug', 'name', 'awarded_at'])
+            ->groupBy('course_id')
+            ->map(fn ($items) => $items->map(fn (UserCourseAchievement $achievement) => [
+                'id' => $achievement->id,
+                'slug' => $achievement->slug,
+                'name' => $achievement->name,
+                'awarded_at' => optional($achievement->awarded_at)?->format('Y-m-d H:i'),
+            ])->values()->all())
+            ->toArray();
+
         return view('tenant.my-courses', [
             'student' => $student,
             'enrollments' => $enrollments,
             'assignedCodes' => $assignedCodes,
+            'notifications' => $notifications,
+            'courseAchievements' => $courseAchievements,
             'gamificationStat' => UserGamificationStat::query()->where('user_id', $student->id)->first(),
             'badges' => $student->badges()->orderBy('name')->get(['badges.id', 'badges.name']),
             'tenantRouteKey' => $tenantRouteKey,
@@ -87,6 +136,14 @@ class TenantStudentController extends Controller
 
     public function show(Request $request, CourseEnrollment $enrollment): View|RedirectResponse
     {
+        if ($this->isTenantSuspended()) {
+            return redirect()->route('tenant.student.login', [
+                'tenant' => $this->tenantRouteKey(),
+            ])->withErrors([
+                'email' => 'El tenant está suspendido. Contacta al administrador.',
+            ]);
+        }
+
         $guard = $this->resolveStudentContext($request);
 
         if ($guard instanceof RedirectResponse) {
@@ -101,19 +158,27 @@ class TenantStudentController extends Controller
 
         $enrollment->load([
             'course.modules' => fn ($query) => $query->orderBy('position'),
+            'course.modules.quiz:id,course_id,module_id,title,minimum_score,max_attempts,is_active',
             'course.modules.lessons' => fn ($query) => $query->orderBy('position'),
             'progress',
             'lessonProgress:enrollment_id,lesson_id,progress_percent,viewed_at,completed_at',
         ]);
 
         $lessons = $this->flattenLessons($enrollment);
+        $moduleUnlockMap = $this->buildModuleUnlockMap($enrollment);
+        $lockedLessonIds = $lessons
+            ->filter(fn ($lesson) => ! ($moduleUnlockMap[(int) $lesson->module_id] ?? false))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
         $completedLessonIds = $enrollment->lessonProgress
             ->filter(fn ($progress) => ! is_null($progress->completed_at))
             ->pluck('lesson_id')
             ->map(fn ($id) => (int) $id)
             ->all();
 
-        $selectedLesson = $this->resolveSelectedLesson($request, $lessons, $completedLessonIds);
+        $selectedLesson = $this->resolveSelectedLesson($request, $lessons, $completedLessonIds, $lockedLessonIds);
 
         [$progressPercent, $isCompleted] = $this->calculateProgress($lessons->count(), count($completedLessonIds));
 
@@ -123,17 +188,32 @@ class TenantStudentController extends Controller
             'enrollment' => $enrollment,
             'lessons' => $lessons,
             'completedLessonIds' => $completedLessonIds,
+            'lockedLessonIds' => $lockedLessonIds,
             'selectedLesson' => $selectedLesson,
             'selectedVideoEmbedUrl' => $this->buildEmbedUrl($selectedLesson?->video_url),
+            'moduleUnlockMap' => $moduleUnlockMap,
             'progressPercent' => $progressPercent,
             'isCompleted' => $isCompleted,
             'gamificationStat' => UserGamificationStat::query()->where('user_id', $student->id)->first(),
             'badges' => $student->badges()->orderBy('name')->get(['badges.id', 'badges.name']),
+            'courseAchievements' => UserCourseAchievement::query()
+                ->where('user_id', $student->id)
+                ->where('course_id', $enrollment->course_id)
+                ->orderByDesc('awarded_at')
+                ->get(['id', 'slug', 'name', 'awarded_at']),
         ]);
     }
 
     public function completeLesson(Request $request, CourseEnrollment $enrollment, CourseLesson $lesson): RedirectResponse
     {
+        if ($this->isTenantSuspended()) {
+            return redirect()->route('tenant.student.login', [
+                'tenant' => $this->tenantRouteKey(),
+            ])->withErrors([
+                'email' => 'El tenant está suspendido. Contacta al administrador.',
+            ]);
+        }
+
         $guard = $this->resolveStudentContext($request);
 
         if ($guard instanceof RedirectResponse) {
@@ -142,6 +222,21 @@ class TenantStudentController extends Controller
 
         if ((int) $enrollment->user_id !== (int) $guard->id) {
             abort(403);
+        }
+
+        $enrollment->load([
+            'course.modules' => fn ($query) => $query->orderBy('position'),
+            'course.modules.quiz:id,course_id,module_id,title,minimum_score,max_attempts,is_active',
+        ]);
+
+        $moduleUnlockMap = $this->buildModuleUnlockMap($enrollment);
+        if (! ($moduleUnlockMap[(int) $lesson->module_id] ?? false)) {
+            return redirect()->route('tenant.student.courses.show', [
+                'tenant' => $this->tenantRouteKey(),
+                'enrollment' => $enrollment->id,
+            ])->withErrors([
+                'lesson' => 'Esta lección está bloqueada por un prerequisito obligatorio del módulo.',
+            ]);
         }
 
         $belongsToEnrollmentCourse = $lesson->module()
@@ -199,14 +294,25 @@ class TenantStudentController extends Controller
             if ($alreadyCompleted) {
                 return [
                     'xp_gain' => 0,
+                    'streak_days' => 0,
+                    'is_course_completed' => $isCompleted,
                     'new_badges' => [],
                 ];
             }
 
-            return app(GamificationService::class)->registerLessonCompletion(
+            $gamification = app(GamificationService::class)->registerLessonCompletion(
                 $guard,
-                (int) ($lesson->xp_reward ?? 0)
+                (int) ($lesson->xp_reward ?? 0),
+                (int) $enrollment->course_id,
+                $progressPercent,
+                $completedLessons,
+                $totalLessons
             );
+
+            return [
+                ...$gamification,
+                'is_course_completed' => $isCompleted,
+            ];
         });
 
         $message = 'Lección marcada como completada.';
@@ -216,12 +322,190 @@ class TenantStudentController extends Controller
         if (! empty($result['new_badges'])) {
             $message .= ' Insignias desbloqueadas: ' . implode(', ', $result['new_badges']) . '.';
         }
+        if (! empty($result['new_course_achievements'])) {
+            $message .= ' Logros por curso: ' . implode(', ', $result['new_course_achievements']) . '.';
+        }
+
+        if (! empty($result['is_course_completed'])) {
+            $guard->notify(new CourseCompletedNotification((string) ($enrollment->course?->title ?? 'Curso')));
+        }
+
+        if (($result['streak_days'] ?? 0) > 0) {
+            $this->registerStreakReminderIfNeeded($guard, (int) $result['streak_days']);
+        }
 
         return redirect()->route('tenant.student.courses.show', [
             'tenant' => $this->tenantRouteKey(),
             'enrollment' => $enrollment->id,
             'lesson' => $lesson->id,
         ])->with('success', $message);
+    }
+
+    public function showQuiz(Request $request, CourseEnrollment $enrollment, Quiz $quiz): View|RedirectResponse
+    {
+        $guard = $this->resolveStudentContext($request);
+
+        if ($guard instanceof RedirectResponse) {
+            return $guard;
+        }
+
+        if ((int) $enrollment->user_id !== (int) $guard->id) {
+            abort(403);
+        }
+
+        $quiz->load([
+            'questions' => fn ($query) => $query->orderBy('position'),
+            'questions.options' => fn ($query) => $query->orderBy('position'),
+        ]);
+
+        if ((int) $quiz->course_id !== (int) $enrollment->course_id || ! $quiz->is_active) {
+            abort(404);
+        }
+
+        $latestAttempt = QuizAttempt::query()
+            ->where('quiz_id', $quiz->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->orderByDesc('attempted_at')
+            ->first();
+
+        return view('tenant.quiz', [
+            'tenantRouteKey' => $this->tenantRouteKey(),
+            'enrollment' => $enrollment,
+            'quiz' => $quiz,
+            'latestAttempt' => $latestAttempt,
+        ]);
+    }
+
+    public function submitQuiz(Request $request, CourseEnrollment $enrollment, Quiz $quiz): RedirectResponse
+    {
+        $guard = $this->resolveStudentContext($request);
+
+        if ($guard instanceof RedirectResponse) {
+            return $guard;
+        }
+
+        if ((int) $enrollment->user_id !== (int) $guard->id) {
+            abort(403);
+        }
+
+        if ((int) $quiz->course_id !== (int) $enrollment->course_id || ! $quiz->is_active) {
+            abort(404);
+        }
+
+        $quiz->load([
+            'questions' => fn ($query) => $query->orderBy('position'),
+            'questions.options' => fn ($query) => $query->orderBy('position'),
+        ]);
+
+        $attemptsCount = QuizAttempt::query()
+            ->where('quiz_id', $quiz->id)
+            ->where('enrollment_id', $enrollment->id)
+            ->count();
+
+        if (! is_null($quiz->max_attempts) && $attemptsCount >= (int) $quiz->max_attempts) {
+            return back()->withErrors([
+                'quiz' => 'Alcanzaste el máximo de intentos para esta evaluación.',
+            ]);
+        }
+
+        $answers = (array) $request->input('answers', []);
+        $answeredCount = collect($answers)
+            ->filter(fn ($value) => ! is_null($value) && $value !== '')
+            ->count();
+
+        if ($answeredCount < 1) {
+            return back()->withErrors([
+                'quiz' => 'Debes responder al menos una pregunta para enviar el quiz.',
+            ])->withInput();
+        }
+
+        $result = DB::transaction(function () use ($quiz, $enrollment, $guard, $answers): array {
+            $totalQuestions = $quiz->questions->count();
+            $correctAnswers = 0;
+
+            $attempt = QuizAttempt::query()->create([
+                'quiz_id' => $quiz->id,
+                'enrollment_id' => $enrollment->id,
+                'user_id' => $guard->id,
+                'total_questions' => $totalQuestions,
+                'correct_answers' => 0,
+                'score_percent' => 0,
+                'status' => 'rejected',
+                'attempted_at' => now(),
+            ]);
+
+            foreach ($quiz->questions as $question) {
+                $selectedOptionId = isset($answers[$question->id]) ? (int) $answers[$question->id] : null;
+
+                /** @var QuizOption|null $selectedOption */
+                $selectedOption = $selectedOptionId
+                    ? $question->options->firstWhere('id', $selectedOptionId)
+                    : null;
+
+                $isCorrect = (bool) ($selectedOption?->is_correct ?? false);
+                if ($isCorrect) {
+                    $correctAnswers++;
+                }
+
+                QuizAnswer::query()->create([
+                    'attempt_id' => $attempt->id,
+                    'question_id' => $question->id,
+                    'selected_option_id' => $selectedOption?->id,
+                    'is_correct' => $isCorrect,
+                ]);
+            }
+
+            $scorePercent = $totalQuestions > 0
+                ? (int) round(($correctAnswers / $totalQuestions) * 100)
+                : 0;
+
+            $approved = $scorePercent >= (int) $quiz->minimum_score;
+
+            $attempt->update([
+                'correct_answers' => $correctAnswers,
+                'score_percent' => $scorePercent,
+                'status' => $approved ? 'approved' : 'rejected',
+            ]);
+
+            return [
+                'approved' => $approved,
+                'score_percent' => $scorePercent,
+            ];
+        });
+
+        return redirect()->route('tenant.student.quizzes.show', [
+            'tenant' => $this->tenantRouteKey(),
+            'enrollment' => $enrollment->id,
+            'quiz' => $quiz->id,
+        ])->with(
+            $result['approved'] ? 'success' : 'status',
+            $result['approved']
+                ? 'Quiz aprobado con ' . $result['score_percent'] . '%. Módulo desbloqueado.'
+                : 'Quiz no aprobado (' . $result['score_percent'] . '%). Intenta nuevamente.'
+        );
+    }
+
+    public function markNotificationRead(Request $request, string $notificationId): RedirectResponse
+    {
+        $guard = $this->resolveStudentContext($request);
+
+        if ($guard instanceof RedirectResponse) {
+            return $guard;
+        }
+
+        $notification = DatabaseNotification::query()
+            ->where('id', $notificationId)
+            ->where('notifiable_type', User::class)
+            ->where('notifiable_id', $guard->id)
+            ->first();
+
+        if ($notification && is_null($notification->read_at)) {
+            $notification->markAsRead();
+        }
+
+        return redirect()->route('tenant.student.courses.index', [
+            'tenant' => $this->tenantRouteKey(),
+        ]);
     }
 
     private function resolveStudentContext(Request $request): User|RedirectResponse
@@ -262,7 +546,7 @@ class TenantStudentController extends Controller
             ->values();
     }
 
-    private function resolveSelectedLesson(Request $request, Collection $lessons, array $completedLessonIds): ?CourseLesson
+    private function resolveSelectedLesson(Request $request, Collection $lessons, array $completedLessonIds, array $lockedLessonIds): ?CourseLesson
     {
         if ($lessons->isEmpty()) {
             return null;
@@ -271,13 +555,17 @@ class TenantStudentController extends Controller
         $requestedLessonId = (int) $request->query('lesson', 0);
         $requestedLesson = $lessons->firstWhere('id', $requestedLessonId);
 
-        if ($requestedLesson) {
+        if ($requestedLesson && ! in_array((int) $requestedLesson->id, $lockedLessonIds, true)) {
             return $requestedLesson;
         }
 
-        $firstPending = $lessons->first(fn ($lesson) => ! in_array((int) $lesson->id, $completedLessonIds, true));
+        $firstPending = $lessons->first(fn ($lesson) => ! in_array((int) $lesson->id, $completedLessonIds, true) && ! in_array((int) $lesson->id, $lockedLessonIds, true));
 
-        return $firstPending ?: $lessons->first();
+        if ($firstPending) {
+            return $firstPending;
+        }
+
+        return $lessons->first(fn ($lesson) => ! in_array((int) $lesson->id, $lockedLessonIds, true)) ?: null;
     }
 
     private function calculateProgress(int $totalLessons, int $completedLessons): array
@@ -323,5 +611,86 @@ class TenantStudentController extends Controller
     private function tenantRouteKey(): string
     {
         return (string) (tenant('alias') ?: tenant('id'));
+    }
+
+    private function buildModuleUnlockMap(CourseEnrollment $enrollment): array
+    {
+        $modules = $enrollment->course->modules->sortBy('position')->values();
+
+        $approvedQuizIds = QuizAttempt::query()
+            ->where('enrollment_id', $enrollment->id)
+            ->where('status', 'approved')
+            ->pluck('quiz_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $unlockMap = [];
+        $completedLessonIds = EnrollmentLessonProgress::query()
+            ->where('enrollment_id', $enrollment->id)
+            ->whereNotNull('completed_at')
+            ->pluck('lesson_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        foreach ($modules as $module) {
+            $moduleId = (int) $module->id;
+            $prerequisiteId = (int) ($module->prerequisite_module_id ?? 0);
+            $isMandatory = (bool) ($module->is_prerequisite_mandatory ?? false);
+
+            if ($prerequisiteId <= 0 || ! $isMandatory) {
+                $unlockMap[$moduleId] = true;
+                continue;
+            }
+
+            $prerequisiteModule = $modules->firstWhere('id', $prerequisiteId);
+
+            if (! $prerequisiteModule) {
+                $unlockMap[$moduleId] = true;
+                continue;
+            }
+
+            $prerequisiteUnlocked = $unlockMap[$prerequisiteId] ?? false;
+            $prerequisiteQuiz = $prerequisiteModule->quiz;
+
+            $prerequisiteSatisfied = false;
+            if ($prerequisiteQuiz && $prerequisiteQuiz->is_active) {
+                $prerequisiteSatisfied = in_array((int) $prerequisiteQuiz->id, $approvedQuizIds, true);
+            } else {
+                $prerequisiteLessonIds = $prerequisiteModule->lessons
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                $prerequisiteSatisfied = ! empty($prerequisiteLessonIds)
+                    && count(array_diff($prerequisiteLessonIds, $completedLessonIds)) === 0;
+            }
+
+            $unlockMap[$moduleId] = $prerequisiteUnlocked && $prerequisiteSatisfied;
+        }
+
+        return $unlockMap;
+    }
+
+    private function isTenantSuspended(): bool
+    {
+        return (string) (tenant('status') ?? 'active') === 'suspended';
+    }
+
+    private function registerStreakReminderIfNeeded(User $student, int $streakDays): void
+    {
+        if ($streakDays < 2) {
+            return;
+        }
+
+        $alreadySentToday = $student->notifications()
+            ->where('type', StreakReminderNotification::class)
+            ->whereDate('created_at', now()->toDateString())
+            ->exists();
+
+        if ($alreadySentToday) {
+            return;
+        }
+
+        $student->notify(new StreakReminderNotification($streakDays));
     }
 }

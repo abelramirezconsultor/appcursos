@@ -1,5 +1,19 @@
 <!DOCTYPE html>
 <html lang="es">
+@php
+    $tenantName = (string) (tenant('name') ?? 'Plataforma');
+    $tenantPrimaryColor = (string) (tenant('primary_color') ?? '#102a43');
+    if (!preg_match('/^#(?:[0-9a-fA-F]{3}){1,2}$/', $tenantPrimaryColor)) {
+        $tenantPrimaryColor = '#102a43';
+    }
+    $tenantLogoPath = (string) (tenant('logo_path') ?? '');
+    $tenantLogoUrl = null;
+    if ($tenantLogoPath !== '') {
+        $tenantLogoUrl = \Illuminate\Support\Str::startsWith($tenantLogoPath, ['http://', 'https://', '/'])
+            ? $tenantLogoPath
+            : asset($tenantLogoPath);
+    }
+@endphp
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,6 +25,9 @@
             background: linear-gradient(180deg, #0b1120 0%, #102a43 35%, #f8fafc 35%, #f8fafc 100%);
             min-height: 100vh;
         }
+        :root {
+            --tenant-primary: {{ $tenantPrimaryColor }};
+        }
         .hero-chip {
             background: rgba(255, 255, 255, 0.2);
             color: #fff;
@@ -20,12 +37,22 @@
             font-size: .8rem;
             font-weight: 600;
         }
+        .btn-primary,
+        .badge.text-bg-primary {
+            background-color: var(--tenant-primary) !important;
+            border-color: var(--tenant-primary) !important;
+        }
     </style>
 </head>
 <body class="game-bg">
     <nav class="navbar navbar-expand-lg bg-dark navbar-dark border-bottom border-secondary">
         <div class="container">
-            <span class="navbar-brand fw-semibold">🏆 {{ tenant('name') ?? 'Plataforma' }}</span>
+            <span class="navbar-brand fw-semibold d-inline-flex align-items-center gap-2">
+                @if ($tenantLogoUrl)
+                    <img src="{{ $tenantLogoUrl }}" alt="Logo {{ $tenantName }}" style="height:30px; width:auto; max-width:120px; object-fit:contain;" />
+                @endif
+                <span>{{ $tenantName }}</span>
+            </span>
             <div class="d-flex gap-3 align-items-center">
                 <a class="nav-link text-white" href="{{ route('tenant.activation.create', ['tenant' => $tenantRouteKey]) }}">Activar código</a>
                 <form method="POST" action="{{ route('tenant.student.logout', ['tenant' => $tenantRouteKey]) }}">
@@ -82,6 +109,36 @@
             <div class="alert alert-success">{{ session('success') }}</div>
         @endif
 
+        @if (($notifications ?? collect())->isNotEmpty())
+            <div class="card mb-4 border-info-subtle">
+                <div class="card-body">
+                    <h5 class="card-title">Centro de notificaciones</h5>
+                    <ul class="list-group list-group-flush">
+                        @foreach ($notifications as $notification)
+                            <li class="list-group-item d-flex justify-content-between align-items-start gap-3">
+                                <div>
+                                    <div class="fw-semibold">
+                                        @if (!$notification['is_read'])
+                                            <span class="badge text-bg-primary me-1">Nueva</span>
+                                        @endif
+                                        {{ $notification['title'] }}
+                                    </div>
+                                    <div class="small text-muted">{{ $notification['message'] }}</div>
+                                    <div class="small text-muted">{{ strtoupper($notification['category']) }} · {{ $notification['created_at'] }}</div>
+                                </div>
+                                @if (!$notification['is_read'])
+                                    <form method="POST" action="{{ route('tenant.student.notifications.read', ['tenant' => $tenantRouteKey, 'notification' => $notification['id']]) }}">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary">Marcar leída</button>
+                                    </form>
+                                @endif
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            </div>
+        @endif
+
         <div class="row g-3">
             @forelse ($enrollments as $enrollment)
                 <div class="col-12 col-md-6">
@@ -99,6 +156,20 @@
                             <div class="mt-3">
                                 <a href="{{ route('tenant.student.courses.show', ['tenant' => $tenantRouteKey, 'enrollment' => $enrollment->id]) }}" class="btn btn-primary btn-sm">Ver curso y lecciones</a>
                             </div>
+
+                            @php
+                                $achievements = $courseAchievements[(int) $enrollment->course_id] ?? [];
+                            @endphp
+                            @if (!empty($achievements))
+                                <div class="mt-3">
+                                    <div class="small text-muted mb-1">Logros del curso</div>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach ($achievements as $achievement)
+                                            <span class="badge rounded-pill text-bg-info">{{ $achievement['name'] }}</span>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>

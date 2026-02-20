@@ -44,7 +44,10 @@ if ($identificationMode === 'subdomain') {
 
         Route::get('/mis-cursos', [TenantStudentController::class, 'index'])->name('tenant.student.courses.index');
         Route::get('/mis-cursos/{enrollment}', [TenantStudentController::class, 'show'])->name('tenant.student.courses.show');
+        Route::get('/mis-cursos/{enrollment}/quizzes/{quiz}', [TenantStudentController::class, 'showQuiz'])->name('tenant.student.quizzes.show');
+        Route::post('/mis-cursos/{enrollment}/quizzes/{quiz}', [TenantStudentController::class, 'submitQuiz'])->name('tenant.student.quizzes.submit');
         Route::post('/mis-cursos/{enrollment}/lecciones/{lesson}/completar', [TenantStudentController::class, 'completeLesson'])->name('tenant.student.lessons.complete');
+        Route::post('/notificaciones/{notification}/leer', [TenantStudentController::class, 'markNotificationRead'])->name('tenant.student.notifications.read');
 
         Route::get('/dashboard', function () {
             return 'This is your multi-tenant application. The id of the current tenant is ' . tenant('id');
@@ -65,7 +68,10 @@ if ($identificationMode === 'subdomain') {
 
         Route::get('/mis-cursos', [TenantStudentController::class, 'index'])->name('tenant.student.courses.index');
         Route::get('/mis-cursos/{enrollment}', [TenantStudentController::class, 'show'])->name('tenant.student.courses.show');
+        Route::get('/mis-cursos/{enrollment}/quizzes/{quiz}', [TenantStudentController::class, 'showQuiz'])->name('tenant.student.quizzes.show');
+        Route::post('/mis-cursos/{enrollment}/quizzes/{quiz}', [TenantStudentController::class, 'submitQuiz'])->name('tenant.student.quizzes.submit');
         Route::post('/mis-cursos/{enrollment}/lecciones/{lesson}/completar', [TenantStudentController::class, 'completeLesson'])->name('tenant.student.lessons.complete');
+        Route::post('/notificaciones/{notification}/leer', [TenantStudentController::class, 'markNotificationRead'])->name('tenant.student.notifications.read');
 
         Route::get('/dashboard', function () {
             return 'This is your multi-tenant application. The id of the current tenant is ' . tenant('id');

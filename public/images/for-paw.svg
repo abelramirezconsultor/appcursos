@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 24" fill="currentColor" aria-hidden="true">
+  <g transform="translate(2,8)">
+    <ellipse cx="2.0" cy="1.2" rx="1.0" ry="1.25"/>
+    <ellipse cx="4.1" cy="0.2" rx="0.9" ry="1.1"/>
+    <ellipse cx="6.2" cy="0.2" rx="0.9" ry="1.1"/>
+    <ellipse cx="8.3" cy="1.2" rx="1.0" ry="1.25"/>
+    <path d="M5.1 2.7c-2.4 0-4.3 1.6-4.7 3.6-.2 1.1.6 2 1.8 2h5.8c1.2 0 2-.9 1.8-2-.4-2-2.3-3.6-4.7-3.6z"/>
+  </g>
+  <g transform="translate(24,3) scale(0.92)">
+    <ellipse cx="2.0" cy="1.2" rx="1.0" ry="1.25"/>
+    <ellipse cx="4.1" cy="0.2" rx="0.9" ry="1.1"/>
+    <ellipse cx="6.2" cy="0.2" rx="0.9" ry="1.1"/>
+    <ellipse cx="8.3" cy="1.2" rx="1.0" ry="1.25"/>
+    <path d="M5.1 2.7c-2.4 0-4.3 1.6-4.7 3.6-.2 1.1.6 2 1.8 2h5.8c1.2 0 2-.9 1.8-2-.4-2-2.3-3.6-4.7-3.6z"/>
+  </g>
+</svg>

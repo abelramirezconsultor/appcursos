@@ -15,21 +15,33 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="font-sans antialiased">
-        <div class="min-h-screen bg-gray-100">
+    @php
+        $isGamingShell = request()->routeIs('dashboard')
+            || request()->routeIs('tenant-admin.show')
+            || request()->routeIs('tenants.create')
+            || request()->routeIs('profile.*')
+            || request()->is('dashboard')
+            || request()->is('tenant-admin/*')
+            || request()->is('tenants/create')
+            || request()->is('profile');
+
+        $isSidebarLayout = auth()->check() && $isGamingShell;
+    @endphp
+    <body x-data="{ sidebarExpanded: false }" class="font-sans antialiased {{ $isGamingShell ? 'gaming-shell' : '' }}">
+        <div class="min-h-screen {{ $isGamingShell ? 'bg-transparent' : 'bg-gray-100' }}">
             @include('layouts.navigation')
 
             <!-- Page Heading -->
             @isset($header)
-                <header class="bg-white shadow">
-                    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                <header class="{{ $isGamingShell ? 'bg-transparent border-b border-orange-500/30' : 'bg-white shadow' }} {{ $isSidebarLayout ? '' : '' }}" @if($isSidebarLayout) :class="sidebarExpanded ? 'sm:pl-64' : 'sm:pl-20'" @endif>
+                    <div class="{{ $isSidebarLayout ? 'w-full py-6 px-4 sm:px-6 lg:px-8' : 'max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8' }}">
                         {{ $header }}
                     </div>
                 </header>
             @endisset
 
             <!-- Page Content -->
-            <main>
+            <main class="{{ $isGamingShell ? 'gaming-main-pane' : '' }}" @if($isSidebarLayout) :class="sidebarExpanded ? 'sm:pl-64' : 'sm:pl-20'" @endif>
                 {{ $slot }}
             </main>
         </div>

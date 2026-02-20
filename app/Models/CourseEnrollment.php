@@ -48,4 +48,9 @@ class CourseEnrollment extends Model
     {
         return $this->hasMany(EnrollmentLessonProgress::class, 'enrollment_id');
     }
+
+    public function quizAttempts(): HasMany
+    {
+        return $this->hasMany(QuizAttempt::class, 'enrollment_id');
+    }
 }

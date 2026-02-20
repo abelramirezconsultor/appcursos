@@ -34,6 +34,11 @@ class Course extends Model
         return $this->hasMany(CourseEnrollment::class);
     }
 
+    public function quizzes(): HasMany
+    {
+        return $this->hasMany(Quiz::class);
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

@@ -9,13 +9,21 @@ Cerrar los pendientes críticos de Fase 2 con foco en:
 ---
 
 ## Estado actual (resumen)
-- **Completado o muy avanzado:** F2.4, gran parte de F2.3 y F2.5.
-- **Parcial:** F2.1, F2.2, F2.7.
-- **Pendiente:** F2.6 y F2.8.
+- **F2.1 Multi-tenant avanzado:** completo en alcance student (admin pospuesto por decisión funcional).
+- **F2.2 Catálogo académico:** completo (prerequisitos opcionales + validación de ciclos).
+- **F2.3 Acceso por código:** completo (auditoría + rate-limit escalonado aplicado).
+- **F2.4 Matrícula/progreso:** completo.
+- **F2.5 Gamificación:** completo.
+- **F2.6 Evaluación (quizzes):** completo.
+- **F2.7 Reportes:** completo (incluye export CSV).
+- **F2.8 Notificaciones:** completo (in-app).
 
 ---
 
 ## Backlog priorizado (ejecutable)
+
+### Pendientes reales para cierre total
+1. **E2E final**: validación funcional completa en entorno productivo/QA.
 
 ### Bloque A — F2.1 Multi-tenant avanzado (prioridad alta)
 ### Alcance
@@ -38,11 +46,11 @@ Cerrar los pendientes críticos de Fase 2 con foco en:
 ### Criterios de aceptación
 - No se puede crear curso/usuario si excede el límite del plan.
 - Tenant en `suspended` no permite login estudiante/admin tenant.
-- Branding tenant visible en login y vistas de estudiante.
+- Branding tenant visible en login y vistas de estudiante. ✅
 
 ---
 
-### Bloque B — F2.6 Evaluación (quizzes) (prioridad alta)
+### Bloque B — F2.6 Evaluación (quizzes) (estado: completo)
 ### Alcance
 - Quiz por curso o módulo.
 - Nota mínima de aprobación.
@@ -68,7 +76,7 @@ Cerrar los pendientes críticos de Fase 2 con foco en:
 
 ---
 
-### Bloque C — F2.8 Notificaciones (prioridad media-alta)
+### Bloque C — F2.8 Notificaciones (estado: completo en in-app)
 ### Alcance
 - Bienvenida de alumno.
 - Código asignado.
@@ -98,23 +106,22 @@ Cerrar los pendientes críticos de Fase 2 con foco en:
 
 ### F2.3 Acceso por código
 - Intentos fallidos por código/usuario/IP.
-- Reglas antiabuso y auditoría de fallos.
+- Reglas antiabuso y auditoría de fallos. ✅
 
 ### F2.5 Gamificación
-- Tablero semanal (filtro por semana).
-- Logros por curso (no solo global).
+- Tablero semanal (filtro por semana). ✅
+- Logros por curso (no solo global). ✅
 
 ### F2.7 Reportes
 - Códigos usados/no usados.
 - Conversión por código/curso.
-- Avance por curso con export simple CSV.
+- Avance por curso con export simple CSV. ✅
 
 ---
 
 ## Orden sugerido de ejecución (3 iteraciones)
-1. **Iteración 1 (rápida):** F2.1 completo + cierre F2.3 intentos.
-2. **Iteración 2:** F2.6 completo (modelo + flujo + UI).
-3. **Iteración 3:** F2.8 + cierre F2.7 + remate F2.5 semanal.
+1. **Iteración 1 (rápida):** validación e2e de punta a punta.
+2. **Iteración 2:** hardening opcional adicional F2.3 (si se requiere).
 
 ---
 
@@ -126,3 +133,5 @@ Cerrar los pendientes críticos de Fase 2 con foco en:
   - Asignar y canjear código con auditoría.
   - Estudiante avanza, rinde quiz, desbloquea, recibe notificaciones.
   - Reportes muestran conversión, avance y ranking semanal.
+
+## Cerrado el 19/02/2026 a las 17:23
